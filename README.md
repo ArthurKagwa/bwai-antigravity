@@ -181,30 +181,33 @@ We need a dedicated database user for the app and two tables: one for **users**,
 
 ```sql
 -- Create the users table
-CREATE TABLE users (
-  id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL
+CREATE TABLE "users" (
+  "id"    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "email" TEXT UNIQUE NOT NULL
 );
 
 -- Create the tasks table
-CREATE TABLE tasks (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  title       TEXT NOT NULL,
-  description TEXT,
-  due_date    TIMESTAMP WITH TIME ZONE,
-  status      TEXT DEFAULT 'pending',
-  created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE "tasks" (
+  "id"          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "user_id"     UUID REFERENCES "users"("id") ON DELETE CASCADE,
+  "title"       TEXT NOT NULL,
+  "description" TEXT,
+  "due_date"    TIMESTAMP WITH TIME ZONE,
+  "status"      TEXT DEFAULT 'pending',
+  "created_at"  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Row-Level Security: each user can only see their own tasks
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tasks" ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY task_isolation_policy ON tasks
-  USING (user_id::text = current_setting('app.current_user_id'));
+CREATE POLICY "task_isolation_policy" ON "tasks"
+  USING ("user_id"::text = current_setting('app.current_user_id'));
+
+-- Create the application user role
+CREATE ROLE todo_app_user;
 
 -- Grant permissions to our app user
-GRANT ALL ON tasks, users TO todo_app_user;
+GRANT ALL ON "tasks", "users" TO todo_app_user;
 ```
 
 > 💡 **What is Row-Level Security?** It's a PostgreSQL feature that automatically filters rows so User A can never see User B's tasks — even if a bug in your code forgets to add a `WHERE` clause. This is the "multi-tenant" part of the workshop.
