@@ -1,6 +1,6 @@
-# 🚀 Workshop: Build an AI To-Do App with Productivity Chatbot in 60 Minutes
+# 🚀 Workshop: Build a To-Do Calendar App in 60 Minutes
 
-> **What you'll build:** A full-stack to-do app with a calendar view, a chat sidebar with an AI productivity coach, and a PostgreSQL database — deployed live on Cloud Run — in under an hour.
+> **What you'll build:** A full-stack to-do app with a calendar view, add/edit/delete tasks, user login, and a PostgreSQL database — deployed live on Cloud Run — in under an hour.
 
 ---
 
@@ -71,7 +71,6 @@ APIs are Google Cloud "services" your app will talk to. They're off by default �
 | API | What it does |
 |---|---|
 | Cloud SQL Admin | Creates & manages your PostgreSQL database. |
-| Vertex AI | Powers the chatbot that provides productivity advice. |
 | Cloud Run | Hosts your app so anyone can visit it via a URL. |
 | Secret Manager | Safely stores sensitive info like database passwords. |
 | Cloud Build | Builds your app from source code automatically. |
@@ -79,50 +78,18 @@ APIs are Google Cloud "services" your app will talk to. They're off by default �
 **[GUI]**
 1. In the Console search bar type **APIs & Services** and click the result.
 2. Click **+ ENABLE APIS AND SERVICES**.
-3. Search for and enable each of the five APIs listed above, one at a time.
+3. Search for and enable each of the four APIs listed above, one at a time.
 
 **[CLI]**
 ```bash
 gcloud services enable \
   sqladmin.googleapis.com \
-  aiplatform.googleapis.com \
   run.googleapis.com \
   secretmanager.googleapis.com \
   cloudbuild.googleapis.com
 ```
 
-> ✅ **Checkpoint:** Visiting **APIs & Services → Enabled APIs** shows all five APIs in the list.
-
----
-
-### Step 1.3 — Grant Permissions (IAM)
-
-Your app runs under a **Service Account** — think of it as a robot employee. You need to give that robot permission to access the database, the AI, and the secret store.
-
-**[GUI]**
-1. In the Console search bar type **IAM** and click **IAM & Admin → IAM**.
-2. Find the row whose email ends in **`@developer.gserviceaccount.com`**.
-3. Click the **pencil icon** (Edit) on that row.
-4. Click **+ ADD ANOTHER ROLE** and add each of these roles (one at a time):
-   - `Cloud SQL Client`
-   - `Vertex AI User`
-   - `Secret Manager Secret Accessor`
-5. Click **Save**.
-
-**[CLI]**
-```bash
-PROJECT_ID=$(gcloud config get-value project)
-PROJECT_NUM=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
-
-for ROLE in cloudsql.client aiplatform.user secretmanager.secretAccessor; do
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SA" \
-    --role="roles/$ROLE"
-done
-```
-
-> ✅ **Checkpoint:** The service account row in IAM now shows three roles.
+> ✅ **Checkpoint:** Visiting **APIs & Services → Enabled APIs** shows all four APIs in the list.
 
 ---
 
@@ -162,21 +129,15 @@ gcloud sql users set-password postgres \
 
 ---
 
-### Step 2.2 — Create the App User & Tables
+### Step 2.2 — Create the Tables
 
-We need a dedicated database user for the app and two tables: one for **users**, one for **tasks**.
-
-> 💡 **Security note:** We're creating a *separate* user (`todo_app_user`) with limited permissions for the app to use. This is different from the root `postgres` user you created in Step 2.1. The app user has its own password and can only access the specific tables we grant it — following the **principle of least privilege**.
+We need two tables: one for **users**, one for **tasks**.
 
 **[GUI]**
 1. Click on your **todo-db** instance.
-2. In the left sidebar, click **Users** → **Add User Account**.
-   - **Username:** `todo_app_user`
-   - **Password:** `app-secret-123` (this is separate from the root password)
-   - Click **Add**.
-3. In the left sidebar, click **SQL Editor** (you may need to click **Open SQL Editor**).
-4. **Copy and paste** the entire SQL block below into the editor.
-5. Click **Run**.
+2. In the left sidebar, click **SQL Editor** (you may need to click **Open SQL Editor**).
+3. **Copy and paste** the entire SQL block below into the editor.
+4. Click **Run**.
 
 **SQL Script:**
 
@@ -198,8 +159,7 @@ CREATE TABLE "tasks" (
   "created_at"  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Grant permissions to our app user
-GRANT ALL ON "tasks", "users" TO todo_app_user;
+-- (No extra grants needed — we connect as the root postgres user)
 ```
 
 > ✅ **Checkpoint:** The SQL Editor shows **"Statement executed successfully"** (or similar).
@@ -218,7 +178,7 @@ Instead of pasting a password into your code (never do that!), we store it in **
    - **Secret value:** (paste the string below, replacing `[PROJECT_ID]` with your actual project ID)
 
 ```
-postgresql://todo_app_user:app-secret-123@localhost/postgres?host=/cloudsql/[PROJECT_ID]:us-central1:todo-db
+postgresql://postgres:workshop-pass-2026@localhost/postgres?host=/cloudsql/[PROJECT_ID]:us-central1:todo-db
 ```
 
 > 💡 **How to find your Project ID:** Look at the top-left of the Console right next to the project name, or run `gcloud config get-value project` in Cloud Shell.
@@ -229,7 +189,7 @@ postgresql://todo_app_user:app-secret-123@localhost/postgres?host=/cloudsql/[PRO
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 
-echo -n "postgresql://todo_app_user:app-secret-123@localhost/postgres?host=/cloudsql/$PROJECT_ID:us-central1:todo-db" | \
+echo -n "postgresql://postgres:workshop-pass-2026@localhost/postgres?host=/cloudsql/$PROJECT_ID:us-central1:todo-db" | \
   gcloud secrets create DATABASE_URL --data-file=-
 ```
 
@@ -250,11 +210,11 @@ Open the **Antigravity IDE** (the AI-powered editor). If you don't have it open 
 **Copy the entire prompt below** and paste it into the Antigravity editor's chat panel.
 
 ```
-Create a Next.js 15 application for a personal to-do list with an AI productivity coach.
+Create a Next.js 15 application for a personal to-do list with a calendar view.
 
 === UI LAYOUT ===
-- Left side: Full-page calendar using 'react-big-calendar' showing tasks
-- Right side: AI Chat sidebar for productivity advice and tips
+- Full-page calendar using 'react-big-calendar' showing the user's tasks
+- A slide-in or modal form for adding and editing tasks
 
 === AUTHENTICATION ===
 Build a simple mock login page:
@@ -262,7 +222,7 @@ Build a simple mock login page:
 - If email exists in the 'users' table, log them in
 - If not, create a new user and log them in
 - Store the user's UUID in a secure HTTP-only cookie
-- Redirect to the main page after login
+- Redirect to the main calendar page after login
 
 === DATABASE & ORM ===
 Use Drizzle ORM with PostgreSQL:
@@ -271,41 +231,13 @@ Use Drizzle ORM with PostgreSQL:
 - Schema for 'tasks' table: id (UUID), user_id (UUID FK), title (TEXT),
   description (TEXT), due_date (TIMESTAMP), status (TEXT), created_at (TIMESTAMP)
 
-=== TASK MANAGEMENT (NO AI) ===
-Users manage tasks manually through the UI:
-- Add Task: Form with title, description, due date, status
-- Edit Task: Click a task on the calendar to edit it
+=== TASK MANAGEMENT ===
+Users manage tasks through the UI:
+- Add Task: Button opens a form with title, description, due date, status fields
+- Edit Task: Click a task on the calendar to open the edit form
 - Delete Task: Delete button on the edit form
 - Tasks display on the calendar based on due_date
-
-=== AI CHATBOT (Productivity Coach) ===
-Create a simple chatbot sidebar that:
-- Uses the Vertex AI Gemini API (@google-cloud/vertexai package)
-- Model: gemini-1.5-flash
-- Has this system prompt baked in:
-
-"""
-You are a friendly productivity coach. Your job is to help users stay
-organized, manage their time better, and build good habits.
-
-You can:
-- Give productivity tips and advice
-- Suggest time management techniques (Pomodoro, time-blocking, etc.)
-- Help users think through how to break down big tasks
-- Offer encouragement and motivation
-- Answer questions about productivity methods
-
-You CANNOT:
-- Access or modify the user's actual tasks (they do that through the UI)
-- See the user's calendar or task list
-- Make changes to any database
-
-Keep responses concise (2-3 sentences unless they ask for more detail).
-Be encouraging and practical.
-"""
-
-- Maintain conversation history within the session
-- Simple chat UI: message list + input field + send button
+- Filter bar to show tasks by status: all / pending / in-progress / completed
 
 === CRITICAL - BUILD-TIME CONFIGURATION ===
 - Add 'export const dynamic = "force-dynamic"' to all pages that
@@ -320,11 +252,11 @@ Be encouraging and practical.
 - Ensure the calendar renders without hydration errors
 ```
 
-> 💡 **What just happened?** Antigravity read your prompt, scaffolded an entire Next.js project with:
+> 💡 **What just happened?** Antigravity read your prompt and scaffolded an entire Next.js project with:
 > - A calendar for viewing tasks
-> - Forms for manually adding/editing/deleting tasks
-> - A chatbot sidebar powered by Gemini for productivity advice
-> - Drizzle ORM for database interactions
+> - Forms for adding, editing, and deleting tasks
+> - User login backed by the database
+> - Drizzle ORM wired up to your Cloud SQL instance
 
 ### Step 3.3 — Review the Generated Code
 
@@ -332,14 +264,11 @@ Take a minute to look through the generated files. Key things to notice:
 
 | File / Folder | Purpose |
 |---|---|
-| `app/page.tsx` | The main page with the calendar + chat layout. |
+| `app/page.tsx` | The main calendar page. |
 | `app/login/page.tsx` | The mock login page. |
-| `app/api/chat/route.ts` | API route that calls Vertex AI Gemini for chatbot responses. |
-| `app/api/tasks/route.ts` | API routes for CRUD operations on tasks. |
+| `app/api/tasks/route.ts` | API routes for creating, reading, updating, and deleting tasks. |
 | `db/schema.ts` | Drizzle ORM schema defining `users` and `tasks` tables. |
 | `lib/secrets.ts` | Fetches `DATABASE_URL` from Secret Manager. |
-| `lib/vertex-ai.ts` | Configures the Vertex AI Gemini client. |
-| `components/ChatSidebar.tsx` | The productivity coach chat UI. |
 | `components/TaskForm.tsx` | Form for adding/editing tasks. |
 | `next.config.js` | Must include `output: 'standalone'` for Cloud Run. |
 | `db/client.ts` | Should check if `DATABASE_URL` exists before connecting. |
@@ -416,12 +345,12 @@ You did it! Let's confirm everything works end to end.
 |---|---|
 | **1. Open your app** | Click the **URL** shown at the top of the Cloud Run service page. |
 | **2. Log in** | On the login page, enter: `workshop@test.com` |
-| **3. Add a task** | Use the task form to add: *"Project meeting"* with tomorrow's date at 10 AM. |
-| **4. Check the calendar** | Your task should appear on the calendar! |
-| **5. Chat with the productivity coach** | In the chat sidebar, type: *"I'm feeling overwhelmed with my workload. Any tips?"* |
-| **6. Get advice** | The AI should respond with practical productivity tips. |
+| **3. Add a task** | Click the add button and fill in: *"Project meeting"*, tomorrow's date at 10 AM, status *pending*. |
+| **4. Check the calendar** | Your task should appear on the calendar on tomorrow's date. |
+| **5. Edit the task** | Click the task on the calendar and update its description. |
+| **6. Mark it done** | Change the status to *completed* and save. |
 
-> 🎉 **Congratulations!** You just built and deployed a full-stack to-do app with a calendar UI, an AI productivity coach, and continuous deployment — all in under an hour.
+> 🎉 **Congratulations!** You just built and deployed a full-stack to-do calendar app with user login, task management, and continuous deployment — all in under an hour.
 
 ---
 
@@ -442,13 +371,11 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | Problem | Fix |
 |---|---|
 | **Cloud SQL instance stuck creating** | Wait up to 10 minutes. If still stuck, delete and recreate. |
-| **"Permission denied" errors** | Re-check Step 1.3 — make sure all three IAM roles are assigned. |
 | **Secret Manager says "not found"** | Verify the secret name is exactly `DATABASE_URL` (case-sensitive). |
 | **Cloud Run deploy fails** | Check **Cloud Build → History** for error logs. Common fix: ensure `package.json` has a `build` script. |
 | **"Can't connect to database" during build** | Make sure pages use `export const dynamic = 'force-dynamic'` and the DB client checks if `DATABASE_URL` exists before connecting. Database is only available at runtime, not build time. |
-| **Calendar shows no tasks after adding** | Refresh the page. Check browser console for errors. |
-| **Chatbot not responding** | Check that the Vertex AI API is enabled and the service account has the `Vertex AI User` role. |
-| **"Quota exceeded" error** | You may need to enable billing or request a quota increase for Vertex AI in your region. |
+| **Calendar shows no tasks after adding** | Refresh the page. Check browser console for errors and that the `app/api/tasks` routes are returning 200. |
+| **Login doesn't redirect** | Check that the cookie is being set correctly and the `users` table was created successfully in Step 2.2. |
 
 ---
 
@@ -457,13 +384,9 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | Term | Plain-English Definition |
 |---|---|
 | **API** | A way for two pieces of software to talk to each other. |
+| **Cloud Build** | Google's service that compiles and packages your code automatically when you push to GitHub. |
 | **Cloud Run** | Google's service that runs your app in a container and gives it a public URL. |
 | **Cloud SQL** | A managed database service — Google handles backups, updates, and security. |
 | **Drizzle ORM** | A lightweight library that lets you talk to a database using TypeScript instead of raw SQL. |
-| **Gemini** | Google's large language model (LLM) that powers the chatbot in this workshop. |
-| **IAM** | *Identity and Access Management* — Google Cloud's permission system. |
 | **Next.js** | A popular React framework for building web applications. |
-| **Principle of Least Privilege** | Give each user/app only the minimum permissions needed. That's why we create a separate `todo_app_user` with limited access instead of using the root `postgres` account. |
 | **Secret Manager** | A vault for storing passwords and API keys securely. |
-| **Service Account** | A special Google Cloud account used by apps (not humans). |
-| **Vertex AI** | Google's AI/ML platform — provides access to Gemini and other AI models. |
