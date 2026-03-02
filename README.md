@@ -1,6 +1,6 @@
-# 🚀 Workshop: Build a Multi-Tenant AI To-Do Agent in 60 Minutes
+# 🚀 Workshop: Build an AI To-Do App with Productivity Chatbot in 60 Minutes
 
-> **What you'll build:** A full-stack AI-powered to-do app with a calendar view, a chat sidebar that talks to a Vertex AI agent, and a PostgreSQL database — deployed live on Cloud Run — in under an hour.
+> **What you'll build:** A full-stack to-do app with a calendar view, a chat sidebar with an AI productivity coach, and a PostgreSQL database — deployed live on Cloud Run — in under an hour.
 
 ---
 
@@ -34,9 +34,8 @@ Every step offers **two paths** — pick whichever feels comfortable:
 |---|---|---|
 | [Phase 1](#-phase-1--project--api-setup) | Project & API Setup | ~5 min |
 | [Phase 2](#-phase-2--database--secrets) | Database & Secrets | ~15 min |
-| [Phase 3](#-phase-3--vertex-ai-agent-builder) | Vertex AI Agent Builder | ~10 min |
-| [Phase 4](#-phase-4--antigravity-code-generation) | Code Generation with Antigravity | ~15 min |
-| [Phase 5](#-phase-5--deploy-via-github) | Deploy via GitHub & Cloud Run | ~15 min |
+| [Phase 3](#-phase-3--antigravity-code-generation) | Code Generation with Antigravity | ~20 min |
+| [Phase 4](#-phase-4--deploy-via-github) | Deploy via GitHub & Cloud Run | ~15 min |
 
 ---
 
@@ -52,16 +51,16 @@ A *project* is Google Cloud's way of grouping all resources (databases, APIs, et
 1. Open [console.cloud.google.com](https://console.cloud.google.com).
 2. Click the **project dropdown** at the top left (it may say "Select a project").
 3. Click **New Project**.
-4. Name it: **`agent-todo-workshop`**
+4. Name it: **`todo-workshop`**
 5. Click **Create**.
-6. Make sure the dropdown now shows **agent-todo-workshop** as active.
+6. Make sure the dropdown now shows **todo-workshop** as active.
 
 **[CLI]**
 ```bash
-gcloud projects create agent-todo-workshop --set-as-default
+gcloud projects create todo-workshop --set-as-default
 ```
 
-> ✅ **Checkpoint:** The top-left dropdown in the Console shows **agent-todo-workshop**.
+> ✅ **Checkpoint:** The top-left dropdown in the Console shows **todo-workshop**.
 
 ---
 
@@ -72,7 +71,7 @@ APIs are Google Cloud "services" your app will talk to. They're off by default �
 | API | What it does |
 |---|---|
 | Cloud SQL Admin | Creates & manages your PostgreSQL database. |
-| Vertex AI | Powers the AI agent that understands natural language. |
+| Vertex AI | Powers the chatbot that provides productivity advice. |
 | Cloud Run | Hosts your app so anyone can visit it via a URL. |
 | Secret Manager | Safely stores sensitive info like database passwords. |
 | Cloud Build | Builds your app from source code automatically. |
@@ -199,18 +198,9 @@ CREATE TABLE "tasks" (
   "created_at"  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Row-Level Security: each user can only see their own tasks
-ALTER TABLE "tasks" ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "task_isolation_policy" ON "tasks"
-  USING ("user_id"::text = current_setting('app.current_user_id'));
-
-
 -- Grant permissions to our app user
 GRANT ALL ON "tasks", "users" TO todo_app_user;
 ```
-
-> 💡 **What is Row-Level Security?** It's a PostgreSQL feature that automatically filters rows so User A can never see User B's tasks — even if a bug in your code forgets to add a `WHERE` clause. This is the "multi-tenant" part of the workshop.
 
 > ✅ **Checkpoint:** The SQL Editor shows **"Statement executed successfully"** (or similar).
 
@@ -247,187 +237,96 @@ echo -n "postgresql://todo_app_user:app-secret-123@localhost/postgres?host=/clou
 
 ---
 
-## 🧠 Phase 3 — Vertex AI Agent Builder
+## 💻 Phase 3 — Antigravity Code Generation
 
-**⏱️ Target time: 10 minutes**
+**⏱️ Target time: 20 minutes**
 
-### Step 3.1 — Create the Agent
-
-An **Agent** is a natural-language AI that can be connected to *tools* (like your database) so it can take real actions on behalf of the user.
-
-**[GUI]**
-1. Search **Vertex AI** in the Console → click **Vertex AI**.
-2. In the left sidebar find **Agent Builder** → click it.
-3. Click **Create App** → select **Agent**.
-4. Name it: **`TaskAgent`**
-5. Click **Create**.
-
----
-
-### Step 3.2 — Configure the Agent's System Instructions
-
-The **Goal** and **Instructions** tell the agent who it is and how to behave. This is the "personality" and "rulebook" for your AI assistant.
-
-1. Inside your agent, click the **Agent** tab (or **Configuration**).
-2. Find the **Goal** field and paste:
-
-```
-You are a helpful task management assistant. You help users create, view, update, and delete tasks on their calendar. You speak concisely and confirm actions after completing them.
-```
-
-3. Find the **Instructions** field and paste the full instructions below:
-
-```
-ROLE:
-You are TaskAgent, a personal task and calendar assistant. You manage the user's to-do list stored in a PostgreSQL database.
-
-CAPABILITIES:
-- Create new tasks with a title, optional description, due date/time, and status
-- List tasks (all, or filtered by date/status)
-- Update existing tasks (change title, description, due date, or status)
-- Delete tasks
-- Answer questions about the user's schedule
-
-RULES:
-1. Always be concise. Confirm actions in one sentence.
-2. When creating a task, ask for clarification if the user doesn't provide a due date.
-3. Default status for new tasks is "pending". Other valid statuses: "in-progress", "completed".
-4. When listing tasks, format them clearly with title, due date, and status.
-5. If a request is ambiguous (e.g., "delete the meeting"), ask which task they mean.
-6. Never reveal internal IDs to the user — refer to tasks by title and date.
-7. Be proactive: if a user says "I have a meeting tomorrow at 3pm", create the task without needing to be told "add a task".
-
-DATABASE SCHEMA:
-- Table: tasks
-  - id (UUID, primary key)
-  - user_id (UUID, foreign key to users)
-  - title (TEXT, required)
-  - description (TEXT, optional)
-  - due_date (TIMESTAMP WITH TIME ZONE, optional)
-  - status (TEXT: 'pending', 'in-progress', 'completed')
-  - created_at (TIMESTAMP WITH TIME ZONE)
-
-- Table: users
-  - id (UUID, primary key)
-  - email (TEXT)
-
-EXAMPLES:
-User: "Add a dentist appointment next Monday at 2pm"
-→ INSERT INTO tasks (user_id, title, due_date, status) VALUES (current_user_id, 'Dentist appointment', '2026-03-09 14:00:00', 'pending');
-→ Response: "Done! I've added 'Dentist appointment' for Monday, March 9th at 2:00 PM."
-
-User: "What do I have this week?"
-→ SELECT title, due_date, status FROM tasks WHERE due_date BETWEEN now() AND now() + interval '7 days' ORDER BY due_date;
-→ Response: "You have 3 tasks this week: [list them]"
-
-User: "Mark the dentist appointment as done"
-→ UPDATE tasks SET status = 'completed' WHERE title ILIKE '%dentist%';
-→ Response: "Done! 'Dentist appointment' is now marked as completed."
-```
-
----
-
-### Step 3.3 — Connect the Agent to Your Database (Tool Setup)
-
-This gives the agent the ability to actually read and write tasks.
-
-1. Click the **Tools** tab.
-2. Click **+ Create** → choose **Cloud SQL**.
-3. Select your **todo-db** instance.
-4. **Database:** `postgres`
-5. **User:** `todo_app_user`
-
-6. In the **Tool Instructions** field, paste **exactly** this:
-
-```
-CRITICAL: Before EVERY SQL query, you MUST first run this command to set the user context for Row-Level Security:
-
-SET LOCAL app.current_user_id = '{{user_uuid}}';
-
-Then run your actual query. Always run both statements together.
-
-Example:
-SET LOCAL app.current_user_id = '{{user_uuid}}';
-SELECT * FROM tasks WHERE status = 'pending' ORDER BY due_date;
-```
-
-7. Click **Save**.
-
-> 💡 **Why `SET LOCAL`?** Remember Row-Level Security from Phase 2? PostgreSQL uses `app.current_user_id` to filter rows automatically. Without this, queries return zero results. The `{{user_uuid}}` placeholder will be replaced by your app with the actual logged-in user's ID.
-
----
-
-### Step 3.4 — Test the Agent in the Console
-
-Before writing any code, verify the agent works:
-
-1. Click the **Preview** or **Try it** panel on the right side.
-2. You'll need to simulate a user. In the **Session parameters** or **Context**, set:
-   ```json
-   {
-     "user_uuid": "00000000-0000-0000-0000-000000000001"
-   }
-   ```
-   (Use a real UUID from your `users` table if you've inserted one, or create a test user first.)
-
-3. Type a test message: `"Add a test task for tomorrow at 9am"`
-4. The agent should respond with confirmation and you should see the SQL tool being called.
-
-> ⚠️ **If the agent says it can't access the database**, double-check that:
-> - The Cloud SQL tool is connected to the correct instance
-> - The `todo_app_user` credentials are correct
-> - The tool instructions include the `SET LOCAL` command
-
-> ✅ **Checkpoint:** The agent successfully creates a task when you chat with it in the preview. Copy and save the **Agent ID** from the URL or top of the page (looks like `projects/PROJECT_ID/locations/REGION/agents/AGENT_ID`) — you'll need it in Phase 4.
-
----
-
-## 💻 Phase 4 — Antigravity Code Generation
-
-**⏱️ Target time: 15 minutes**
-
-### Step 4.1 — Open Antigravity IDE
+### Step 3.1 — Open Antigravity IDE
 
 Open the **Antigravity IDE** (the AI-powered editor). If you don't have it open already, your workshop facilitator will provide the link.
 
-### Step 4.2 — Generate the App with the Master Prompt
+### Step 3.2 — Generate the App with the Master Prompt
 
-**Copy the entire prompt below** and paste it into the Antigravity editor's chat panel. Replace `[YOUR_AGENT_ID]` with the Agent ID you saved from Phase 3.
+**Copy the entire prompt below** and paste it into the Antigravity editor's chat panel.
 
 ```
-Create a Next.js 15 application.
+Create a Next.js 15 application for a personal to-do list with an AI productivity coach.
 
-UI: Use 'react-big-calendar' for a full-page schedule on the left.
-    AI Chat sidebar on the right.
+=== UI LAYOUT ===
+- Left side: Full-page calendar using 'react-big-calendar' showing tasks
+- Right side: AI Chat sidebar for productivity advice and tips
 
-Auth: Build a mock login page that saves a User UUID from the
-      'users' table into a secure cookie.
+=== AUTHENTICATION ===
+Build a simple mock login page:
+- User enters their email
+- If email exists in the 'users' table, log them in
+- If not, create a new user and log them in
+- Store the user's UUID in a secure HTTP-only cookie
+- Redirect to the main page after login
 
-Database & ORM: Use Drizzle ORM for simple and succinct database
-    interactions. Use @google-cloud/secret-manager to fetch
-    'DATABASE_URL' at runtime. Ensure the Drizzle schema includes
-    description and created_at fields for tasks.
+=== DATABASE & ORM ===
+Use Drizzle ORM with PostgreSQL:
+- Use @google-cloud/secret-manager to fetch 'DATABASE_URL' at runtime
+- Schema for 'users' table: id (UUID), email (TEXT)
+- Schema for 'tasks' table: id (UUID), user_id (UUID FK), title (TEXT),
+  description (TEXT), due_date (TIMESTAMP), status (TEXT), created_at (TIMESTAMP)
 
-Agent: Connect to Vertex AI Agent ID [YOUR_AGENT_ID].
-       Ensure every message sends the user_uuid.
+=== TASK MANAGEMENT (NO AI) ===
+Users manage tasks manually through the UI:
+- Add Task: Form with title, description, due date, status
+- Edit Task: Click a task on the calendar to edit it
+- Delete Task: Delete button on the edit form
+- Tasks display on the calendar based on due_date
 
-CRITICAL - Build-Time Configuration:
-    - Add 'export const dynamic = "force-dynamic"' to all pages that
-      query the database to prevent static generation.
-    - Ensure the database connection is ONLY initialized in Server
-      Components or API routes at REQUEST time, never at build time.
-    - In next.config.js, set output: 'standalone' for Cloud Run.
-    - Add a build-time check: if DATABASE_URL is missing, skip database
-      initialization (Cloud Build won't have it, but Cloud Run will).
+=== AI CHATBOT (Productivity Coach) ===
+Create a simple chatbot sidebar that:
+- Uses the Vertex AI Gemini API (@google-cloud/vertexai package)
+- Model: gemini-1.5-flash
+- Has this system prompt baked in:
 
-Testing & Validation: Test your work at the end! Write a quick
-    connection test script to verify the Drizzle DB connection works,
-    and ensure the calendar renders without hydration errors.
+"""
+You are a friendly productivity coach. Your job is to help users stay
+organized, manage their time better, and build good habits.
+
+You can:
+- Give productivity tips and advice
+- Suggest time management techniques (Pomodoro, time-blocking, etc.)
+- Help users think through how to break down big tasks
+- Offer encouragement and motivation
+- Answer questions about productivity methods
+
+You CANNOT:
+- Access or modify the user's actual tasks (they do that through the UI)
+- See the user's calendar or task list
+- Make changes to any database
+
+Keep responses concise (2-3 sentences unless they ask for more detail).
+Be encouraging and practical.
+"""
+
+- Maintain conversation history within the session
+- Simple chat UI: message list + input field + send button
+
+=== CRITICAL - BUILD-TIME CONFIGURATION ===
+- Add 'export const dynamic = "force-dynamic"' to all pages that
+  query the database to prevent static generation.
+- Database connection ONLY initialized at REQUEST time, never at build time.
+- In next.config.js, set output: 'standalone' for Cloud Run.
+- Add a build-time check: if DATABASE_URL is missing, skip database
+  initialization (Cloud Build won't have it, but Cloud Run will).
+
+=== TESTING ===
+- Write a quick connection test script to verify the Drizzle DB connection works
+- Ensure the calendar renders without hydration errors
 ```
 
-> 💡 **What just happened?** Antigravity read your prompt, scaffolded an entire Next.js project, wired up the database layer, created the UI components, and wrote tests — all automatically.
+> 💡 **What just happened?** Antigravity read your prompt, scaffolded an entire Next.js project with:
+> - A calendar for viewing tasks
+> - Forms for manually adding/editing/deleting tasks
+> - A chatbot sidebar powered by Gemini for productivity advice
+> - Drizzle ORM for database interactions
 
-### Step 4.3 — Review the Generated Code
+### Step 3.3 — Review the Generated Code
 
 Take a minute to look through the generated files. Key things to notice:
 
@@ -435,15 +334,19 @@ Take a minute to look through the generated files. Key things to notice:
 |---|---|
 | `app/page.tsx` | The main page with the calendar + chat layout. |
 | `app/login/page.tsx` | The mock login page. |
+| `app/api/chat/route.ts` | API route that calls Vertex AI Gemini for chatbot responses. |
+| `app/api/tasks/route.ts` | API routes for CRUD operations on tasks. |
 | `db/schema.ts` | Drizzle ORM schema defining `users` and `tasks` tables. |
 | `lib/secrets.ts` | Fetches `DATABASE_URL` from Secret Manager. |
-| `scripts/test-connection.ts` | Tests that the DB connection works. |
+| `lib/vertex-ai.ts` | Configures the Vertex AI Gemini client. |
+| `components/ChatSidebar.tsx` | The productivity coach chat UI. |
+| `components/TaskForm.tsx` | Form for adding/editing tasks. |
 | `next.config.js` | Must include `output: 'standalone'` for Cloud Run. |
 | `db/client.ts` | Should check if `DATABASE_URL` exists before connecting. |
 
 > 💡 **Why the build-time check?** During Cloud Build, the database isn't accessible — the `DATABASE_URL` secret only becomes available when the container runs on Cloud Run. Pages that query the database must use `export const dynamic = 'force-dynamic'` to skip static generation, and the DB client should gracefully handle missing credentials at build time.
 
-### Step 4.4 — Push to GitHub
+### Step 3.4 — Push to GitHub
 
 1. Click the **Source Control** icon in the left sidebar (it looks like a branch).
 2. Click **Initialize Repository**.
@@ -455,11 +358,11 @@ Take a minute to look through the generated files. Key things to notice:
 
 ---
 
-## 🚢 Phase 5 — Deploy via GitHub
+## 🚢 Phase 4 — Deploy via GitHub
 
 **⏱️ Target time: 15 minutes**
 
-### Step 5.1 — Create a Cloud Run Service
+### Step 4.1 — Create a Cloud Run Service
 
 Cloud Run will host your app and automatically re-deploy every time you push to GitHub.
 
@@ -480,7 +383,7 @@ Cloud Run will host your app and automatically re-deploy every time you push to 
 
 ---
 
-### Step 5.2 — Configure Database & Secrets
+### Step 4.2 — Configure Database & Secrets
 
 Still on the Create Service page, scroll down:
 
@@ -513,10 +416,12 @@ You did it! Let's confirm everything works end to end.
 |---|---|
 | **1. Open your app** | Click the **URL** shown at the top of the Cloud Run service page. |
 | **2. Log in** | On the login page, enter: `workshop@test.com` |
-| **3. Talk to the agent** | In the chat sidebar, type: *"I have a meeting tomorrow at 10 AM regarding the project launch. Please add that description."* |
-| **4. Check the calendar** | Refresh the page (or wait for auto-update). Your new task should appear on the calendar with its title, time, and description! |
+| **3. Add a task** | Use the task form to add: *"Project meeting"* with tomorrow's date at 10 AM. |
+| **4. Check the calendar** | Your task should appear on the calendar! |
+| **5. Chat with the productivity coach** | In the chat sidebar, type: *"I'm feeling overwhelmed with my workload. Any tips?"* |
+| **6. Get advice** | The AI should respond with practical productivity tips. |
 
-> 🎉 **Congratulations!** You just built and deployed a multi-tenant AI-powered to-do agent with a calendar UI, a chat interface, row-level security, and continuous deployment — all in under an hour.
+> 🎉 **Congratulations!** You just built and deployed a full-stack to-do app with a calendar UI, an AI productivity coach, and continuous deployment — all in under an hour.
 
 ---
 
@@ -525,7 +430,7 @@ You did it! Let's confirm everything works end to end.
 To avoid any charges after the workshop, delete the project:
 
 ```bash
-gcloud projects delete agent-todo-workshop
+gcloud projects delete todo-workshop
 ```
 
 Or via the Console: **IAM & Admin → Settings → Shut Down**.
@@ -541,7 +446,8 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | **Secret Manager says "not found"** | Verify the secret name is exactly `DATABASE_URL` (case-sensitive). |
 | **Cloud Run deploy fails** | Check **Cloud Build → History** for error logs. Common fix: ensure `package.json` has a `build` script. |
 | **"Can't connect to database" during build** | Make sure pages use `export const dynamic = 'force-dynamic'` and the DB client checks if `DATABASE_URL` exists before connecting. Database is only available at runtime, not build time. |
-| **Calendar shows no tasks after chatting** | Refresh the page. Check that the Agent ID in your code matches the one in the Console. |
+| **Calendar shows no tasks after adding** | Refresh the page. Check browser console for errors. |
+| **Chatbot not responding** | Check that the Vertex AI API is enabled and the service account has the `Vertex AI User` role. |
 | **"Quota exceeded" error** | You may need to enable billing or request a quota increase for Vertex AI in your region. |
 
 ---
@@ -554,10 +460,10 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | **Cloud Run** | Google's service that runs your app in a container and gives it a public URL. |
 | **Cloud SQL** | A managed database service — Google handles backups, updates, and security. |
 | **Drizzle ORM** | A lightweight library that lets you talk to a database using TypeScript instead of raw SQL. |
+| **Gemini** | Google's large language model (LLM) that powers the chatbot in this workshop. |
 | **IAM** | *Identity and Access Management* — Google Cloud's permission system. |
 | **Next.js** | A popular React framework for building web applications. |
 | **Principle of Least Privilege** | Give each user/app only the minimum permissions needed. That's why we create a separate `todo_app_user` with limited access instead of using the root `postgres` account. |
-| **Row-Level Security (RLS)** | A database feature that restricts which rows a user can see. |
 | **Secret Manager** | A vault for storing passwords and API keys securely. |
 | **Service Account** | A special Google Cloud account used by apps (not humans). |
-| **Vertex AI** | Google's AI/ML platform — it powers the chatbot agent in this workshop. |
+| **Vertex AI** | Google's AI/ML platform — provides access to Gemini and other AI models. |
