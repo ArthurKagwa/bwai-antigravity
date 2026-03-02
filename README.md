@@ -310,6 +310,15 @@ Database & ORM: Use Drizzle ORM for simple and succinct database
 Agent: Connect to Vertex AI Agent ID [YOUR_AGENT_ID].
        Ensure every message sends the user_uuid.
 
+CRITICAL - Build-Time Configuration:
+    - Add 'export const dynamic = "force-dynamic"' to all pages that
+      query the database to prevent static generation.
+    - Ensure the database connection is ONLY initialized in Server
+      Components or API routes at REQUEST time, never at build time.
+    - In next.config.js, set output: 'standalone' for Cloud Run.
+    - Add a build-time check: if DATABASE_URL is missing, skip database
+      initialization (Cloud Build won't have it, but Cloud Run will).
+
 Testing & Validation: Test your work at the end! Write a quick
     connection test script to verify the Drizzle DB connection works,
     and ensure the calendar renders without hydration errors.
@@ -328,6 +337,10 @@ Take a minute to look through the generated files. Key things to notice:
 | `db/schema.ts` | Drizzle ORM schema defining `users` and `tasks` tables. |
 | `lib/secrets.ts` | Fetches `DATABASE_URL` from Secret Manager. |
 | `scripts/test-connection.ts` | Tests that the DB connection works. |
+| `next.config.js` | Must include `output: 'standalone'` for Cloud Run. |
+| `db/client.ts` | Should check if `DATABASE_URL` exists before connecting. |
+
+> 💡 **Why the build-time check?** During Cloud Build, the database isn't accessible — the `DATABASE_URL` secret only becomes available when the container runs on Cloud Run. Pages that query the database must use `export const dynamic = 'force-dynamic'` to skip static generation, and the DB client should gracefully handle missing credentials at build time.
 
 ### Step 4.4 — Push to GitHub
 
@@ -357,6 +370,12 @@ Cloud Run will host your app and automatically re-deploy every time you push to 
 5. Select your **GitHub repo** from the list (you may need to authorize Cloud Build to access GitHub).
 6. Set **Build Type** to: **Next.js**
 7. Click **Save**.
+
+> 💡 **Important:** During the build process, Cloud Build does NOT have access to your database or secrets. This is why the Antigravity prompt included instructions to:
+> - Use `export const dynamic = 'force-dynamic'` on database-querying pages
+> - Check for the existence of `DATABASE_URL` before initializing connections
+> 
+> These patterns ensure Next.js skips static generation for those pages and only connects to the database at request time when the app is running on Cloud Run.
 
 ---
 
@@ -420,6 +439,7 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | **"Permission denied" errors** | Re-check Step 1.3 — make sure all three IAM roles are assigned. |
 | **Secret Manager says "not found"** | Verify the secret name is exactly `DATABASE_URL` (case-sensitive). |
 | **Cloud Run deploy fails** | Check **Cloud Build → History** for error logs. Common fix: ensure `package.json` has a `build` script. |
+| **"Can't connect to database" during build** | Make sure pages use `export const dynamic = 'force-dynamic'` and the DB client checks if `DATABASE_URL` exists before connecting. Database is only available at runtime, not build time. |
 | **Calendar shows no tasks after chatting** | Refresh the page. Check that the Agent ID in your code matches the one in the Console. |
 | **"Quota exceeded" error** | You may need to enable billing or request a quota increase for Vertex AI in your region. |
 
