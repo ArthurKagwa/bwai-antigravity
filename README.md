@@ -264,23 +264,121 @@ An **Agent** is a natural-language AI that can be connected to *tools* (like you
 
 ---
 
-### Step 3.2 — Connect the Agent to Your Database
+### Step 3.2 — Configure the Agent's System Instructions
 
-This gives the agent the ability to read and write tasks.
+The **Goal** and **Instructions** tell the agent who it is and how to behave. This is the "personality" and "rulebook" for your AI assistant.
 
-1. Inside your agent, click the **Tools** tab.
-2. Click **Create** → choose **Cloud SQL**.
+1. Inside your agent, click the **Agent** tab (or **Configuration**).
+2. Find the **Goal** field and paste:
+
+```
+You are a helpful task management assistant. You help users create, view, update, and delete tasks on their calendar. You speak concisely and confirm actions after completing them.
+```
+
+3. Find the **Instructions** field and paste the full instructions below:
+
+```
+ROLE:
+You are TaskAgent, a personal task and calendar assistant. You manage the user's to-do list stored in a PostgreSQL database.
+
+CAPABILITIES:
+- Create new tasks with a title, optional description, due date/time, and status
+- List tasks (all, or filtered by date/status)
+- Update existing tasks (change title, description, due date, or status)
+- Delete tasks
+- Answer questions about the user's schedule
+
+RULES:
+1. Always be concise. Confirm actions in one sentence.
+2. When creating a task, ask for clarification if the user doesn't provide a due date.
+3. Default status for new tasks is "pending". Other valid statuses: "in-progress", "completed".
+4. When listing tasks, format them clearly with title, due date, and status.
+5. If a request is ambiguous (e.g., "delete the meeting"), ask which task they mean.
+6. Never reveal internal IDs to the user — refer to tasks by title and date.
+7. Be proactive: if a user says "I have a meeting tomorrow at 3pm", create the task without needing to be told "add a task".
+
+DATABASE SCHEMA:
+- Table: tasks
+  - id (UUID, primary key)
+  - user_id (UUID, foreign key to users)
+  - title (TEXT, required)
+  - description (TEXT, optional)
+  - due_date (TIMESTAMP WITH TIME ZONE, optional)
+  - status (TEXT: 'pending', 'in-progress', 'completed')
+  - created_at (TIMESTAMP WITH TIME ZONE)
+
+- Table: users
+  - id (UUID, primary key)
+  - email (TEXT)
+
+EXAMPLES:
+User: "Add a dentist appointment next Monday at 2pm"
+→ INSERT INTO tasks (user_id, title, due_date, status) VALUES (current_user_id, 'Dentist appointment', '2026-03-09 14:00:00', 'pending');
+→ Response: "Done! I've added 'Dentist appointment' for Monday, March 9th at 2:00 PM."
+
+User: "What do I have this week?"
+→ SELECT title, due_date, status FROM tasks WHERE due_date BETWEEN now() AND now() + interval '7 days' ORDER BY due_date;
+→ Response: "You have 3 tasks this week: [list them]"
+
+User: "Mark the dentist appointment as done"
+→ UPDATE tasks SET status = 'completed' WHERE title ILIKE '%dentist%';
+→ Response: "Done! 'Dentist appointment' is now marked as completed."
+```
+
+---
+
+### Step 3.3 — Connect the Agent to Your Database (Tool Setup)
+
+This gives the agent the ability to actually read and write tasks.
+
+1. Click the **Tools** tab.
+2. Click **+ Create** → choose **Cloud SQL**.
 3. Select your **todo-db** instance.
-4. In the **Instructions** field, paste **exactly** this:
+4. **Database:** `postgres`
+5. **User:** `todo_app_user`
+
+6. In the **Tool Instructions** field, paste **exactly** this:
 
 ```
-Before every query, you MUST run:
+CRITICAL: Before EVERY SQL query, you MUST first run this command to set the user context for Row-Level Security:
+
 SET LOCAL app.current_user_id = '{{user_uuid}}';
+
+Then run your actual query. Always run both statements together.
+
+Example:
+SET LOCAL app.current_user_id = '{{user_uuid}}';
+SELECT * FROM tasks WHERE status = 'pending' ORDER BY due_date;
 ```
 
-> 💡 **Why this instruction?** Remember Row-Level Security from Phase 2? This command tells PostgreSQL *which user is making the request* so it can filter tasks automatically. The `{{user_uuid}}` placeholder is replaced by your app at runtime.
+7. Click **Save**.
 
-> ✅ **Checkpoint:** The Tools tab shows a Cloud SQL tool connected to **todo-db**. Copy and save the **Agent ID** from the top of the page — you'll need it in Phase 4.
+> 💡 **Why `SET LOCAL`?** Remember Row-Level Security from Phase 2? PostgreSQL uses `app.current_user_id` to filter rows automatically. Without this, queries return zero results. The `{{user_uuid}}` placeholder will be replaced by your app with the actual logged-in user's ID.
+
+---
+
+### Step 3.4 — Test the Agent in the Console
+
+Before writing any code, verify the agent works:
+
+1. Click the **Preview** or **Try it** panel on the right side.
+2. You'll need to simulate a user. In the **Session parameters** or **Context**, set:
+   ```json
+   {
+     "user_uuid": "00000000-0000-0000-0000-000000000001"
+   }
+   ```
+   (Use a real UUID from your `users` table if you've inserted one, or create a test user first.)
+
+3. Type a test message: `"Add a test task for tomorrow at 9am"`
+4. The agent should respond with confirmation and you should see the SQL tool being called.
+
+> ⚠️ **If the agent says it can't access the database**, double-check that:
+> - The Cloud SQL tool is connected to the correct instance
+> - The `todo_app_user` credentials are correct
+> - The tool instructions include the `SET LOCAL` command
+
+> ✅ **Checkpoint:** The agent successfully creates a task when you chat with it in the preview. Copy and save the **Agent ID** from the URL or top of the page (looks like `projects/PROJECT_ID/locations/REGION/agents/AGENT_ID`) — you'll need it in Phase 4.
 
 ---
 
