@@ -167,11 +167,13 @@ gcloud sql users set-password postgres \
 
 We need a dedicated database user for the app and two tables: one for **users**, one for **tasks**.
 
+> 💡 **Security note:** We're creating a *separate* user (`todo_app_user`) with limited permissions for the app to use. This is different from the root `postgres` user you created in Step 2.1. The app user has its own password and can only access the specific tables we grant it — following the **principle of least privilege**.
+
 **[GUI]**
 1. Click on your **todo-db** instance.
 2. In the left sidebar, click **Users** → **Add User Account**.
    - **Username:** `todo_app_user`
-   - **Password:** `app-secret-123`
+   - **Password:** `app-secret-123` (this is separate from the root password)
    - Click **Add**.
 3. In the left sidebar, click **SQL Editor** (you may need to click **Open SQL Editor**).
 4. **Copy and paste** the entire SQL block below into the editor.
@@ -203,8 +205,6 @@ ALTER TABLE "tasks" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "task_isolation_policy" ON "tasks"
   USING ("user_id"::text = current_setting('app.current_user_id'));
 
--- Create the application user role
-CREATE ROLE todo_app_user;
 
 -- Grant permissions to our app user
 GRANT ALL ON "tasks", "users" TO todo_app_user;
@@ -458,6 +458,7 @@ Or via the Console: **IAM & Admin → Settings → Shut Down**.
 | **Drizzle ORM** | A lightweight library that lets you talk to a database using TypeScript instead of raw SQL. |
 | **IAM** | *Identity and Access Management* — Google Cloud's permission system. |
 | **Next.js** | A popular React framework for building web applications. |
+| **Principle of Least Privilege** | Give each user/app only the minimum permissions needed. That's why we create a separate `todo_app_user` with limited access instead of using the root `postgres` account. |
 | **Row-Level Security (RLS)** | A database feature that restricts which rows a user can see. |
 | **Secret Manager** | A vault for storing passwords and API keys securely. |
 | **Service Account** | A special Google Cloud account used by apps (not humans). |
